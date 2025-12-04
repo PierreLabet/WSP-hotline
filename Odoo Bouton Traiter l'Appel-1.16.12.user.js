@@ -1,13 +1,13 @@
 // ==UserScript==
-// @name         Odoo Bouton Traiter l'Appel
+// @name         Odoo Bouton Traiter l'Appel test
 // @namespace    http://tampermonkey.net/
-// @version      1.16.26
+// @version      1.16.31
 // @description  Ajoute un bouton "Traiter l'appel" avec texte clignotant
 // @author       Alexis&Pierre
 // @match        https://wspharma.odoo.com/*
 // @match        http://wspharma.odoo.com/*
-// @updateURL    https://github.com/pierrelabetWSP/WSP-hotline/raw/refs/heads/main/Odoo%20Bouton%20Traiter%20l'Appel-1.16.17.user.js
-// @downloadURL  https://github.com/pierrelabetWSP/WSP-hotline/raw/refs/heads/main/Odoo%20Bouton%20Traiter%20l'Appel-1.16.17.user.js
+// @updateURL
+// @downloadURL
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=odoo.com
 // @grant        none
 // ==/UserScript==
@@ -29,6 +29,7 @@
 
     console.log("Script de traitement d'appel démarré");
 
+    const URL_LISTE_TICKETS = 'https://wspharma.odoo.com/web#action=368&model=helpdesk.ticket&view_type=list&cids=1&menu_id=250';
     let intervalId = null; // Pour stocker l'ID de l'intervalle de clignotement
     let timerState = {
         isRunning: false,
@@ -98,11 +99,11 @@
     function trouverBoutonAssigner() {
         // Essayer plusieurs sélecteurs pour trouver le bouton
         return document.querySelector('button[name="assign_ticket_to_self"]') ||
-               document.querySelector('button.btn.btn-primary[data-hotkey="g"]') ||
-               Array.from(document.getElementsByTagName('button')).find(btn => {
-                   const span = btn.querySelector('span');
-                   return span && span.textContent.trim().toLowerCase() === "me l'assigner";
-               });
+            document.querySelector('button.btn.btn-primary[data-hotkey="g"]') ||
+            Array.from(document.getElementsByTagName('button')).find(btn => {
+            const span = btn.querySelector('span');
+            return span && span.textContent.trim().toLowerCase() === "me l'assigner";
+        });
     }
 
     // Fonction pour trouver le bouton LANCER
@@ -113,9 +114,9 @@
             // Chercher le bouton LANCER dans la barre d'état
             const buttons = Array.from(statusbar.getElementsByTagName('button'));
             const btnLancer = buttons.find(btn =>
-                btn.getAttribute('name') === 'start_ticket' &&
-                btn.getAttribute('type') === 'object'
-            );
+                                           btn.getAttribute('name') === 'start_ticket' &&
+                                           btn.getAttribute('type') === 'object'
+                                          );
             if (btnLancer) return btnLancer;
         }
         // Fallback: chercher dans toute la page
@@ -386,7 +387,23 @@
                         sauvegarderEtat(false, ticketId);
                     }
 
-                    // 3. Sauvegarder
+                    // 3. Passer le ticket en étape "En attente" si possible
+                    try {
+                        const boutonEnAttente = document.querySelector(
+                            'button.o_arrow_button[data-value="3"], button.btn.o_arrow_button_current.o_arrow_button.disabled.text-uppercase[data-value="3"]'
+                        );
+                        if (boutonEnAttente) {
+                            console.log("Mise du ticket en étape 'En attente'");
+                            boutonEnAttente.click();
+                            await new Promise(resolve => setTimeout(resolve, 300));
+                        } else {
+                            console.log("Bouton d'étape 'En attente' introuvable");
+                        }
+                    } catch (err) {
+                        console.warn("Erreur lors du passage du ticket en attente:", err);
+                    }
+
+                    // 4. Sauvegarder
                     const btnEnregistrer = document.querySelector('button.o_form_button_save, button[data-hotkey="s"]');
                     if (btnEnregistrer) {
                         console.log("Sauvegarde des modifications");
@@ -438,7 +455,7 @@
 
         // Ajouter l'image de chargement
         const loadingImg = document.createElement('img');
-        loadingImg.src = 'https://i.gifer.com/UV02.gif';
+        loadingImg.src = 'https://i.gifer.com/TvOE.gif';
         loadingImg.style.width = '45px';
         loadingImg.style.height = '45px';
         loadingImg.style.flexShrink = '0';
@@ -610,6 +627,22 @@
             boutonCloture.className = 'btn btn-danger';
             boutonCloture.style.backgroundColor = '#dc3545';
             boutonCloture.style.borderColor = '#dc3545';
+            if (!boutonCloture.dataset.redirectOnClose) {
+                boutonCloture.dataset.redirectOnClose = 'true';
+                boutonCloture.addEventListener('click', () => {
+                    setTimeout(() => {
+                        // Essayer d'abord de cliquer sur le bouton "Tickets" du fil d'Ariane (bouton retour Odoo)
+                        const breadcrumbBack = document.querySelector('li.breadcrumb-item.o_back_button a, li.breadcrumb-item.o_back_button');
+                        if (breadcrumbBack) {
+                            console.log("Redirection via le bouton de retour du fil d'Ariane");
+                            (breadcrumbBack.tagName === 'A' ? breadcrumbBack : breadcrumbBack.querySelector('a'))?.click();
+                        } else {
+                            console.log("Bouton de retour introuvable, redirection directe vers la liste");
+                            window.location.href = URL_LISTE_TICKETS;
+                        }
+                    }, 1500);
+                });
+            }
         }
     }
 
@@ -652,8 +685,11 @@
                     }
                 }
 
-                // Rediriger vers la page de création de ticket
-                window.location.href = 'https://wspharma.odoo.com/web?debug=#menu_id=250&cids=1&action=368&model=helpdesk.ticket&view_type=form';
+                // Ouvrir la page de création de ticket dans une nouvelle fenêtre/onglet
+                window.open(
+                    'https://wspharma.odoo.com/web?debug=#menu_id=250&cids=1&action=368&model=helpdesk.ticket&view_type=form',
+                    '_blank'
+                );
             });
 
             // Ajouter le bouton à la fin de la barre de statut
@@ -803,7 +839,8 @@
             const now = new Date();
             const pad = n => n.toString().padStart(2, '0');
             const dateStr = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ${pad(now.getHours())}H${pad(now.getMinutes())}`;
-            const texte = `${initiales} ${dateStr} :Ne répond pas `;
+            const texte = `${initiales} ${dateStr} :"Madame, Monsieur,
+Nous avons cherché à vous joindre `;
             // Créer le bloc d'initiales
             const bloc = document.createElement('div');
             bloc.className = 'bloc-initiales-odoo';
@@ -1092,6 +1129,32 @@
                 input.dispatchEvent(new Event('input', { bubbles: true }));
                 input.dispatchEvent(new Event('change', { bubbles: true }));
 
+                // Réinitialiser l'état de traitement de l'appel (bandeau rouge, bouton, stockage)
+                try {
+                    supprimerTexteClignotant();
+                } catch (err) {
+                    console.warn("Impossible de supprimer le texte clignotant:", err);
+                }
+
+                try {
+                    const boutonTraiter = document.getElementById('btn-traiter-appel');
+                    if (boutonTraiter) {
+                        boutonTraiter.innerText = 'Traiter l\'appel';
+                        boutonTraiter.className = 'btn btn-primary';
+                    }
+                } catch (err) {
+                    console.warn("Impossible de réinitialiser le bouton Traiter l'appel:", err);
+                }
+
+                try {
+                    const ticketId = obtenirTicketId();
+                    if (ticketId) {
+                        sauvegarderEtat(false, ticketId);
+                    }
+                } catch (err) {
+                    console.warn("Impossible de réinitialiser l'état stocké du ticket:", err);
+                }
+
                 // Attendre un court délai pour s'assurer que les événements sont traités
                 await new Promise(resolve => setTimeout(resolve, 300));
 
@@ -1276,79 +1339,79 @@
 
     // Fonction principale de scan des rappels
     function scanRappelsRdv() {
-    const ths = document.querySelectorAll('table thead th');
-    let idxRdv = -1;
-    let idxUser = -1;
+        const ths = document.querySelectorAll('table thead th');
+        let idxRdv = -1;
+        let idxUser = -1;
 
-    ths.forEach((th, i) => {
-        const txt = th.textContent.toLowerCase();
-        if (txt.includes('nouveau rendez-vous')) idxRdv = i;
-        if (txt.includes('utilisateur') || txt.includes('assigné à')) idxUser = i;
-    });
-
-    if (idxRdv === -1) return;
-
-    const lignes = document.querySelectorAll('tr.o_data_row');
-    lignes.forEach(ligne => {
-        const cells = ligne.querySelectorAll('td');
-        if (idxRdv >= cells.length) return;
-
-        const cellRdv = cells[idxRdv];
-        const cellUser = idxUser !== -1 && idxUser < cells.length ? cells[idxUser] : null;
-
-        let cellPharma = null;
-        cells.forEach(cell => {
-            if (/pharmacie|pharma|pharmacies|pharmacie/i.test(cell.textContent)) cellPharma = cell;
+        ths.forEach((th, i) => {
+            const txt = th.textContent.toLowerCase();
+            if (txt.includes('nouveau rendez-vous')) idxRdv = i;
+            if (txt.includes('utilisateur') || txt.includes('assigné à')) idxUser = i;
         });
 
-        if (!cellRdv) return;
+        if (idxRdv === -1) return;
 
-        const match = cellRdv.textContent.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
-        if (!match) {
-            cellRdv.classList.remove('rdv-clignote-orange', 'rdv-clignote-rouge', 'rdv-clignote-depasse');
-            return;
-        }
+        const lignes = document.querySelectorAll('tr.o_data_row');
+        lignes.forEach(ligne => {
+            const cells = ligne.querySelectorAll('td');
+            if (idxRdv >= cells.length) return;
 
-        const [_, jj, mm, aaaa, hh, min, ss] = match;
-        const dateRdv = new Date(`${aaaa}-${mm}-${jj}T${hh}:${min}:${ss}`);
-        const now = new Date();
-        const diff = (dateRdv - now) / 60000;
+            const cellRdv = cells[idxRdv];
+            const cellUser = idxUser !== -1 && idxUser < cells.length ? cells[idxUser] : null;
 
-        if (dateRdv.toDateString() !== now.toDateString()) {
-            cellRdv.classList.remove('rdv-clignote-orange', 'rdv-clignote-rouge', 'rdv-clignote-depasse');
-            return;
-        }
+            let cellPharma = null;
+            cells.forEach(cell => {
+                if (/pharmacie|pharma|pharmacies|pharmacie/i.test(cell.textContent)) cellPharma = cell;
+            });
 
-        const nomPharma = cellPharma ? cellPharma.textContent.trim() : 'Client';
-        const nomUser = cellUser ? cellUser.textContent.trim() : 'Utilisateur';
+            if (!cellRdv) return;
 
-        // RDV dépassé
-        if (diff < 0) {
-            cellRdv.classList.add('rdv-clignote-depasse');
-            cellRdv.classList.remove('rdv-clignote-orange', 'rdv-clignote-rouge');
-
-            const rdvKey = `_${nomUser}_depasse_${cellRdv.textContent.trim()}_${nomPharma}`;
-            if (!localStorage.getItem('notifFermee_' + rdvKey)) {
-                afficherNotifRdv(`${nomUser} ⚠️ RDV dépassé pour ${nomPharma} (${hh}:${min})`, rdvKey, true);
+            const match = cellRdv.textContent.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
+            if (!match) {
+                cellRdv.classList.remove('rdv-clignote-orange', 'rdv-clignote-rouge', 'rdv-clignote-depasse');
+                return;
             }
-            return;
-        }
 
-        // RDV imminent
-        if (diff <= 10) {
-            cellRdv.classList.add('rdv-clignote-rouge');
-            cellRdv.classList.remove('rdv-clignote-orange', 'rdv-clignote-depasse');
+            const [_, jj, mm, aaaa, hh, min, ss] = match;
+            const dateRdv = new Date(`${aaaa}-${mm}-${jj}T${hh}:${min}:${ss}`);
+            const now = new Date();
+            const diff = (dateRdv - now) / 60000;
 
-            const rdvKey = `${cellRdv.textContent.trim()}_${nomPharma}_${nomUser}`;
-            if (!localStorage.getItem('notifFermee_' + rdvKey)) {
-                afficherNotifRdv(`${nomUser} ⏰ RDV dans 10 min : ${nomPharma} à ${hh}:${min}`, rdvKey);
+            if (dateRdv.toDateString() !== now.toDateString()) {
+                cellRdv.classList.remove('rdv-clignote-orange', 'rdv-clignote-rouge', 'rdv-clignote-depasse');
+                return;
             }
-        } else {
-            cellRdv.classList.add('rdv-clignote-orange');
-            cellRdv.classList.remove('rdv-clignote-rouge', 'rdv-clignote-depasse');
-        }
-    });
-}
+
+            const nomPharma = cellPharma ? cellPharma.textContent.trim() : 'Client';
+            const nomUser = cellUser ? cellUser.textContent.trim() : 'Utilisateur';
+
+            // RDV dépassé
+            if (diff < 0) {
+                cellRdv.classList.add('rdv-clignote-depasse');
+                cellRdv.classList.remove('rdv-clignote-orange', 'rdv-clignote-rouge');
+
+                const rdvKey = `_${nomUser}_depasse_${cellRdv.textContent.trim()}_${nomPharma}`;
+                if (!localStorage.getItem('notifFermee_' + rdvKey)) {
+                    afficherNotifRdv(`${nomUser} ⚠️ RDV dépassé pour ${nomPharma} (${hh}:${min})`, rdvKey, true);
+                }
+                return;
+            }
+
+            // RDV imminent
+            if (diff <= 10) {
+                cellRdv.classList.add('rdv-clignote-rouge');
+                cellRdv.classList.remove('rdv-clignote-orange', 'rdv-clignote-depasse');
+
+                const rdvKey = `${cellRdv.textContent.trim()}_${nomPharma}_${nomUser}`;
+                if (!localStorage.getItem('notifFermee_' + rdvKey)) {
+                    afficherNotifRdv(`${nomUser} ⏰ RDV dans 10 min : ${nomPharma} à ${hh}:${min}`, rdvKey);
+                }
+            } else {
+                cellRdv.classList.add('rdv-clignote-orange');
+                cellRdv.classList.remove('rdv-clignote-rouge', 'rdv-clignote-depasse');
+            }
+        });
+    }
     setInterval(scanRappelsRdv, 4000); // toutes les 4s
     setTimeout(scanRappelsRdv, 500); // au chargement
 
@@ -1386,6 +1449,6 @@
             console.error("Erreur lors de la relance périodique (fiche ticket):", e);
         }
     }, 30000);
+
+
 })();
-
-
